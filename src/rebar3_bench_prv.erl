@@ -28,6 +28,8 @@ do(State) ->
     rebar_api:add_deps_to_path(State),
     Config = rebar_state:get(State, benchmarks, []),
     {Args, _} = rebar_state:command_parsed_args(State),
+    App = hd(rebar_state:project_apps(State)),
+    code:add_path(rebar_app_info:ebin_dir(App)),
     handle_args(Args, Config),
     {ok, State}.
 

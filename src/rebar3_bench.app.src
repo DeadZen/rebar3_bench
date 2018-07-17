@@ -1,0 +1,15 @@
+{application, rebar3_bench,
+ [{description, "A rebar plugin"},
+  {vsn, "0.0.1"},
+  {registered, []},
+  {applications,
+   [kernel,
+    stdlib
+   ]},
+  {env,[]},
+  {modules, []},
+
+  {maintainers, ["Pedram Nimreezi"]},
+  {licenses, ["Apache 2.0"]},
+  {links, []}
+ ]}.

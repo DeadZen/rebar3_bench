@@ -28,18 +28,28 @@ do(State) ->
     rebar_api:add_deps_to_path(State),
     Config = rebar_state:get(State, benchmarks, []),
     {Args, _} = rebar_state:command_parsed_args(State),
+    Dir = rebar_state:dir(State),
     App = hd(rebar_state:project_apps(State)),
+    PluginDeps = rebar_state:all_plugin_deps(State),
+
     code:add_path(rebar_app_info:ebin_dir(App)),
-    handle_args(Args, Config),
+    case handle_args(Args, Config) of
+        {ok, _} -> file:set_cwd(Dir),
+                   maybe_generate(PluginDeps);
+        {error, _} ->
+            rebar_api:info("Configured benchmarks are: ~p~n", [benchmarks(Config)])
+    end,
     {ok, State}.
 
 
-handle_args([], Config) ->    
-    case [ element(1, B) || B <- Config ] of
-        [] -> 
-            rebar_api:error("No available benchmarks to execute~n", []);
-        Benchmarks -> 
-            rebar_api:error("No benchmark specified to execute~nConfigured benchmarks: ~p.~n", [Benchmarks])
+handle_args([], Config) ->
+    case benchmarks(Config) of
+        [] ->
+            rebar_api:error("No available benchmarks to execute~n", []),
+            {error, undefined};
+        _ ->
+            rebar_api:error("No benchmark specified to execute~n", []),
+            {error, undefined}
     end;
 handle_args(Args, Config) ->    
     {_, Benchmark} = proplists:lookup(task, Args),
@@ -48,26 +58,32 @@ handle_args(Args, Config) ->
             rebar_api:debug("Running ~p benchmark ~n", [Benchmark]),
             application:ensure_all_started(folsom),
             basho_bench:main(Command),
-            ok = maybe_generate();
+            {ok, Benchmark};
         _ ->
-            Benchmarks = [ element(1, B) || B <- Config ],
-            rebar_api:error("Specified benchmark not found~nConfigured benchmarks: ~p~n", [Benchmarks])
+            rebar_api:error("Specified benchmark ~p not found~n", [Benchmark]),
+            {error, undefined}
     end.
 
 -spec format_error(any()) ->  iolist().
 format_error(Reason) ->
     io_lib:format("~p", [Reason]).
 
+benchmarks(Config) ->
+    [ element(1, B) || B <- Config ].
 
-maybe_generate() -> 
-	{ok, {Ret, _}} = exec("which Rscript"), 
-	R = "_build/default/plugins/basho_bench/priv/summary.r",
-	case Ret of 
-		1 -> rebar_api:info("Please install R to auto-generate benchmark graphs");
-		0 -> exec("Rscript --vanilla " ++ R ++ " -i tests/current"),
-		     determine_outcome()	
-	end,
-	ok.
+maybe_generate(false) ->
+    rebar_api:error("Problem generating graph: ~p", [{error, benchmarker_notfound}]);
+maybe_generate(PluginDeps) ->
+    {ok, {Ret, _}} = exec("which Rscript"),
+    BenchApp = lists:keyfind(<<"basho_bench">>, 2, PluginDeps),
+    Priv = rebar_app_info:priv_dir(BenchApp),
+    R = filename:join([Priv, "summary.r"]),
+    case Ret of
+            1 -> rebar_api:info("Please install R to auto-generate benchmark graphs");
+            0 -> exec("Rscript --vanilla " ++ R ++ " -i tests/current"),
+                 determine_outcome()
+    end,
+    ok.
 
 determine_outcome() ->
     case exec("test -f tests/current/summary.png") of
@@ -101,4 +117,3 @@ get_data(Port, Acc) ->
                        end,
             {ExitCode, Acc}
     end.
-
